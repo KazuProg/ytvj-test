@@ -3,8 +3,13 @@ import VJPlayer from "@/components/VJPlayer";
 import type { VJPlayerRef, VJSyncData } from "@/components/VJPlayer/types";
 import { INITIAL_SYNC_DATA } from "@/constants";
 import { useStorageSync } from "@/hooks/useStorageSync";
+import { endFileDragGuard, useFileDragGuard } from "@/pages/Controller/hooks/useFileDragGuard";
+import { useFileDropOverlay } from "@/pages/Controller/hooks/useFileDropOverlay";
+import overlayStyles from "@/pages/Controller/styles/fileDropOverlay.module.css";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useControllerAPIContext } from "../../contexts/ControllerAPIContext";
+import { getVideoFilesFromDataTransfer } from "../../utils/videoFileDrop";
+import { createLocalFileVideoItem } from "../../utils/videoItem";
 import SeekBar from "./components/SeekBar";
 import { useDeckAPI } from "./hooks/useDeckAPI";
 import styles from "./index.module.css";
@@ -18,9 +23,13 @@ interface DeckProps {
 
 const Deck = ({ localStorageKey, deckId, className, initialPaused = false }: DeckProps) => {
   const vjPlayerRef = useRef<VJPlayerRef | null>(null);
+  const defaultSyncData = useMemo(
+    () => ({ ...INITIAL_SYNC_DATA, paused: initialPaused }) as VJSyncData,
+    [initialPaused]
+  );
   const { data: syncData, setData: setSyncData } = useStorageSync<VJSyncData>(
     localStorageKey,
-    { ...INITIAL_SYNC_DATA, paused: initialPaused },
+    defaultSyncData,
     { overwrite: true }
   );
   const syncDataRef = useRef(syncData);
@@ -31,6 +40,14 @@ const Deck = ({ localStorageKey, deckId, className, initialPaused = false }: Dec
   const [playbackRate, setPlaybackRate] = useState<number>(1);
   const [hotCues, setHotCues] = useState<Map<number, number>>(new Map());
   const [loopMarkers, setLoopMarkers] = useState<number[]>([]);
+  const isFileDragActive = useFileDragGuard();
+  const {
+    isDragging: isVideoDragging,
+    onDragOver: handleVideoDragOver,
+    onDragLeave: handleVideoDragLeave,
+    onDropStart: handleVideoDropStart,
+  } = useFileDropOverlay({ filesOnly: true });
+  const isYouTubeSource = syncData.source.type === "youtube";
 
   const getCurrentTime = (): number => {
     return vjPlayerRef.current?.getCurrentTime() ?? 0;
@@ -50,6 +67,7 @@ const Deck = ({ localStorageKey, deckId, className, initialPaused = false }: Dec
         ...previousSyncData,
         ...filteredPartialData,
       } as VJSyncData;
+      syncDataRef.current = newSyncData;
       setSyncData(newSyncData);
 
       if (previousSyncData?.playbackRate !== newSyncData.playbackRate) {
@@ -87,6 +105,19 @@ const Deck = ({ localStorageKey, deckId, className, initialPaused = false }: Dec
     onOpacityChange: handleOpacityChange,
   });
 
+  const handleVideoDrop = useCallback(
+    (e: React.DragEvent) => {
+      handleVideoDropStart(e);
+
+      const videoFile = getVideoFilesFromDataTransfer(e.dataTransfer)[0];
+      if (videoFile) {
+        deckAPIRef.current?.loadVideo(createLocalFileVideoItem(videoFile));
+      }
+      endFileDragGuard();
+    },
+    [deckAPIRef, handleVideoDropStart]
+  );
+
   useEffect(() => {
     deckAPIRef.current?.setPlaybackRate(playbackRate);
   }, [playbackRate, deckAPIRef]);
@@ -112,27 +143,43 @@ const Deck = ({ localStorageKey, deckId, className, initialPaused = false }: Dec
           baseTime: Date.now(),
         });
       },
+      onMediaReady: () => {
+        deckAPIRef.current?.unMute();
+      },
     }),
-    [updateSyncData]
+    [updateSyncData, deckAPIRef]
   );
 
   return (
-    <div className={`${styles.deck} ${className}`}>
-      <div>
+    <div
+      className={`${styles.deck} ${className}`}
+      onDragOver={handleVideoDragOver}
+      onDragLeave={handleVideoDragLeave}
+      onDrop={handleVideoDrop}
+    >
+      <div className={styles.playerWrapper}>
         <VJPlayer
           className={styles.player}
           ref={vjPlayerRef}
           events={vjPlayerEvents}
           syncKey={localStorageKey}
         />
-        <SeekBar
-          currentTimeFunc={getCurrentTime}
-          durationFunc={() => deckAPIRef.current?.getDuration() ?? 0}
-          hotCues={hotCues}
-          loopMarkers={loopMarkers}
-          onSeek={(time: number) => deckAPIRef.current?.seekTo(time)}
-        />
+        {isFileDragActive && isYouTubeSource && (
+          <div
+            className={styles.playerDropCapture}
+            onDragOver={handleVideoDragOver}
+            onDrop={handleVideoDrop}
+            aria-hidden
+          />
+        )}
       </div>
+      <SeekBar
+        currentTimeFunc={getCurrentTime}
+        durationFunc={() => deckAPIRef.current?.getDuration() ?? 0}
+        hotCues={hotCues}
+        loopMarkers={loopMarkers}
+        onSeek={(time: number) => deckAPIRef.current?.seekTo(time)}
+      />
       <div className={styles.controlsContainer}>
         <fieldset className={styles.controlFieldset}>
           <legend>Adjust</legend>
@@ -193,6 +240,7 @@ const Deck = ({ localStorageKey, deckId, className, initialPaused = false }: Dec
           />
         </fieldset>
       </div>
+      {isVideoDragging && <div className={overlayStyles.overlay}>+</div>}
     </div>
   );
 };

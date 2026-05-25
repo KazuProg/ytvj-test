@@ -1,5 +1,6 @@
 import { useControllerAPIContext } from "@/pages/Controller/contexts/ControllerAPIContext";
 import type { VideoItem } from "@/pages/Controller/types/videoItem";
+import { getVideoItemKey } from "@/pages/Controller/utils/videoItem";
 import { useEffect, useRef } from "react";
 import ListItem from "./components/ListItem";
 import styles from "./index.module.css";
@@ -45,7 +46,7 @@ const VideoList = ({ videos, selectedIndex, onSelect }: VideoListProps) => {
           {videos.map((item: VideoItem, index: number) => (
             <ListItem
               videoItem={item}
-              key={`${item.id}-${index}`}
+              key={`${getVideoItemKey(item)}-${index}`}
               onSelect={onSelect}
               className={selectedIndex === index ? styles.selected : ""}
               index={index}

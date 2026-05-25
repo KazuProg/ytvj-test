@@ -1,4 +1,5 @@
 import type { VideoItem } from "@/pages/Controller/types/videoItem";
+import { normalizeVideoItem } from "@/pages/Controller/utils/videoItem";
 import type { MixerData } from "@/types";
 import { useEffect, useRef, useState } from "react";
 import type { MixerAPI } from "../../types";
@@ -29,8 +30,9 @@ export const useMixerAPI = ({ mixerDataRef, setMixerData, setGlobalMixer }: UseM
         });
       },
       setPreparedVideo: (video: VideoItem | string) => {
-        const videoObj = typeof video === "string" ? { id: video } : video;
-        setPreparedVideo(videoObj);
+        const normalized = normalizeVideoItem(video);
+        preparedVideoRef.current = normalized;
+        setPreparedVideo(normalized);
       },
       getPreparedVideo: () => {
         return preparedVideoRef.current;
