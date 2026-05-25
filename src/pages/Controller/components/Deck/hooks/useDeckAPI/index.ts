@@ -1,5 +1,5 @@
 import type { VJPlayerRef, VJSyncData } from "@/components/VJPlayer/types";
-import { getEffectiveSyncTime } from "@/components/VJPlayer/utils/getEffectiveSyncTime";
+import { getEffectiveSyncTime } from "@/components/VJPlayer/utils";
 import type { LibraryAPI } from "@/pages/Controller/components/Library/types";
 import { useControllerAPIContext } from "@/pages/Controller/contexts/ControllerAPIContext";
 import type { VideoItem } from "@/pages/Controller/types/videoItem";
