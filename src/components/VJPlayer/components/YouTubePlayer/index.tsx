@@ -39,6 +39,7 @@ export interface YouTubePlayerProps {
   onSourceLoaded?: () => void;
   onDurationChange?: (duration: number | null) => void;
   events?: Pick<VJPlayerEvents, "onPaused" | "onUnpaused" | "onEnded">;
+  playerVars?: YTPlayerVars;
 }
 
 const createVJPlayerInterface = (player: YTPlayer): VJPlayerInterface => ({
@@ -69,6 +70,7 @@ const YouTubePlayer = ({
   onSourceLoaded,
   onDurationChange,
   events,
+  playerVars: playerVarsOverride,
 }: YouTubePlayerProps) => {
   const playerElementId = useId();
   const playerRef = useRef<YTPlayer | null>(null);
@@ -228,6 +230,11 @@ const YouTubePlayer = ({
     playerEventsRef.current = playerEvents;
   }, [playerEvents]);
 
+  const mergedPlayerVars = useMemo(
+    () => ({ ...playerVars, ...playerVarsOverride }),
+    [playerVarsOverride]
+  );
+
   const initializePlayer = useCallback(async () => {
     try {
       await loadYouTubeIFrameAPI();
@@ -238,7 +245,7 @@ const YouTubePlayer = ({
       isInitializedRef.current = true;
 
       playerRef.current = new window.YT.Player(playerElementId, {
-        playerVars,
+        playerVars: mergedPlayerVars,
         events: playerEventsRef.current,
       });
     } catch (err) {
@@ -247,7 +254,7 @@ const YouTubePlayer = ({
       setError(errorMessage);
       isInitializedRef.current = false;
     }
-  }, [playerElementId]);
+  }, [playerElementId, mergedPlayerVars]);
 
   useEffect(() => {
     initializePlayer();

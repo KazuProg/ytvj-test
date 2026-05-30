@@ -1,9 +1,14 @@
 import VJPlayer from "@/components/VJPlayer";
+import type { YTPlayerVars } from "@/components/VJPlayer/components/YouTubePlayer/types";
 import { LOCAL_STORAGE_KEY } from "@/constants";
 import { useStorageSync } from "@/hooks/useStorageSync";
 import type { MixerData } from "@/types";
 import { useEffect, useMemo, useState } from "react";
 import styles from "./index.module.css";
+
+const projectionPlayerVars: YTPlayerVars = {
+  tag: "vjp", // 拡張機能の判定用。
+};
 
 const ProjectionPage = () => {
   const [ch0Filters, setCh0Filters] = useState<Record<string, string>>({});
@@ -103,6 +108,7 @@ const ProjectionPage = () => {
           className={styles.player}
           syncKey={LOCAL_STORAGE_KEY.leftDeck}
           events={ch0Events}
+          playerVars={projectionPlayerVars}
         />
       </div>
       <div
@@ -122,6 +128,7 @@ const ProjectionPage = () => {
           className={styles.player}
           syncKey={LOCAL_STORAGE_KEY.rightDeck}
           events={ch1Events}
+          playerVars={projectionPlayerVars}
         />
       </div>
     </>
