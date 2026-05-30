@@ -1,5 +1,9 @@
 import type { VideoItem } from "@/pages/Controller/types/videoItem";
 
+export const getVideoFilesFromDataTransfer = (dataTransfer: DataTransfer): File[] => {
+  return Array.from(dataTransfer.files).filter((file) => file.type.startsWith("video/"));
+};
+
 export function createYouTubeVideoItem(
   videoId: string,
   options?: { title?: string; start?: number }

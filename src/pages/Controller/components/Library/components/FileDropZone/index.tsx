@@ -1,9 +1,13 @@
-import { useCallback, useState } from "react";
+import { useFileDropOverlay } from "@/pages/Controller/hooks/useFileDropOverlay";
+import overlayStyles from "@/pages/Controller/styles/fileDropOverlay.module.css";
+import { getVideoFilesFromDataTransfer } from "@/pages/Controller/utils/videoItem";
+import { useCallback } from "react";
 import styles from "./index.module.css";
 
 interface FileDropZoneProps {
   accept?: string;
-  onFileLoad: (text: string, filename?: string) => void;
+  onFileLoad?: (text: string, filename?: string) => void;
+  onVideoFilesLoad?: (files: File[]) => void;
   children: React.ReactNode;
   className?: string;
 }
@@ -11,32 +15,25 @@ interface FileDropZoneProps {
 const FileDropZone = ({
   accept = ".txt",
   onFileLoad,
+  onVideoFilesLoad,
   children,
   className = "",
 }: FileDropZoneProps) => {
-  const [isDragging, setIsDragging] = useState(false);
-
-  const handleDragOver = useCallback((e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setIsDragging(true);
-  }, []);
-
-  const handleDragLeave = useCallback((e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    const currentTarget = e.currentTarget;
-    const relatedTarget = e.relatedTarget as Node | null;
-    if (!currentTarget.contains(relatedTarget)) {
-      setIsDragging(false);
-    }
-  }, []);
+  const { isDragging, onDragOver, onDragLeave, onDropStart } = useFileDropOverlay();
 
   const handleDrop = useCallback(
     (e: React.DragEvent) => {
-      e.preventDefault();
-      e.stopPropagation();
-      setIsDragging(false);
+      onDropStart(e);
+
+      const videoFiles = getVideoFilesFromDataTransfer(e.dataTransfer);
+      if (videoFiles.length > 0) {
+        onVideoFilesLoad?.(videoFiles);
+        return;
+      }
+
+      if (!onFileLoad) {
+        return;
+      }
 
       const files = Array.from(e.dataTransfer.files);
       const acceptedFile = files.find((file) => {
@@ -62,18 +59,18 @@ const FileDropZone = ({
       };
       reader.readAsText(acceptedFile);
     },
-    [accept, onFileLoad]
+    [accept, onFileLoad, onVideoFilesLoad, onDropStart]
   );
 
   return (
     <div
       className={`${styles.container} ${className}`}
-      onDragOver={handleDragOver}
-      onDragLeave={handleDragLeave}
+      onDragOver={onDragOver}
+      onDragLeave={onDragLeave}
       onDrop={handleDrop}
     >
       {children}
-      {isDragging && <div className={styles.overlay}>+</div>}
+      {isDragging && <div className={overlayStyles.overlay}>+</div>}
     </div>
   );
 };

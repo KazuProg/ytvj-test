@@ -8,8 +8,7 @@ import { useFileDropOverlay } from "@/pages/Controller/hooks/useFileDropOverlay"
 import overlayStyles from "@/pages/Controller/styles/fileDropOverlay.module.css";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useControllerAPIContext } from "../../contexts/ControllerAPIContext";
-import { getVideoFilesFromDataTransfer } from "../../utils/videoFileDrop";
-import { createLocalFileVideoItem } from "../../utils/videoItem";
+import { createLocalFileVideoItem, getVideoFilesFromDataTransfer } from "../../utils/videoItem";
 import SeekBar from "./components/SeekBar";
 import { useDeckAPI } from "./hooks/useDeckAPI";
 import styles from "./index.module.css";

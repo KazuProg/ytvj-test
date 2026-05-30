@@ -1,5 +1,4 @@
 import { useFileIO } from "@/hooks/useFileIO";
-import { LOCAL_FILES_PLAYLIST_NAME } from "@/pages/Controller/constants";
 import { useControllerAPIContext } from "@/pages/Controller/contexts/ControllerAPIContext";
 import type { VideoItem } from "@/pages/Controller/types/videoItem";
 import {
@@ -67,7 +66,7 @@ const Library = () => {
       // ローカルファイルは blob URL が毎回変わるため、そのままでは重複判定できない。
       // ここでは createLocalFileVideoItem() と同じ規則（拡張子なしのファイル名）で title を比較する。
       const existingTitles = new Set(
-        (playlists.get(LOCAL_FILES_PLAYLIST_NAME) ?? [])
+        (playlists.get("LocalFiles") ?? [])
           .map((item) => item.title)
           .filter((t): t is string => !!t)
       );
@@ -83,7 +82,7 @@ const Library = () => {
       if (newItems.length === 0) {
         return;
       }
-      addPlaylist(LOCAL_FILES_PLAYLIST_NAME, newItems, true, "append");
+      addPlaylist("LocalFiles", newItems, true, "append");
     },
     [libraryAPI, addPlaylist, playlists]
   );
