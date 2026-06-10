@@ -11,6 +11,7 @@ import {
 } from "react";
 import UrlVideoPlayer from "./components/UrlVideoPlayer";
 import YouTubePlayer from "./components/YouTubePlayer";
+import type { YTPlayerVars } from "./components/YouTubePlayer/types";
 import { usePlayerSync } from "./hooks/usePlayerSync";
 import styles from "./index.module.css";
 import type { VJPlayerEvents, VJPlayerInterface, VJPlayerRef, VJSyncData } from "./types";
@@ -20,10 +21,14 @@ interface VJPlayerProps {
   className?: string;
   events?: VJPlayerEvents;
   syncKey?: string;
+  playerVars?: YTPlayerVars;
 }
 
 const VJPlayer = forwardRef<VJPlayerRef, VJPlayerProps>(
-  ({ className, events, syncKey = DEFAULT_VALUES.syncKey }, ref) => {
+  (
+    { className, events, syncKey = DEFAULT_VALUES.syncKey, playerVars: playerVarsOverride },
+    ref
+  ) => {
     const youtubePlayerRef = useRef<VJPlayerInterface | null>(null);
     const urlPlayerRef = useRef<VJPlayerInterface | null>(null);
     const isUrlSourceRef = useRef(false);
@@ -174,6 +179,7 @@ const VJPlayer = forwardRef<VJPlayerRef, VJPlayerProps>(
             onSourceLoaded={markSourceLoaded}
             onDurationChange={setDuration}
             events={events}
+            playerVars={playerVarsOverride}
           />
         </div>
         <div className={styles.playerLayer} style={{ display: isUrlSource ? "block" : "none" }}>
