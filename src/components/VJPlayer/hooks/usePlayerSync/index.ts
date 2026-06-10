@@ -1,50 +1,43 @@
 import { INITIAL_SYNC_DATA, SYNC_CONFIG } from "@/constants";
 import { useCallback, useEffect, useRef } from "react";
-import type { VJSyncData } from "../../types";
+import type { RefObject } from "react";
+import type { VJPlayerInterface, VJSyncData } from "../../types";
+import { hasSourceChanged } from "../../utils";
 import { usePlaybackRateAdjustment } from "../usePlaybackRateAdjustment";
 import { useTimeSync } from "../useTimeSync";
-
-/** プレイヤー同期用のインターフェース */
-export interface PlayerSyncInterface {
-  getCurrentTime: () => number | null;
-  getDuration: () => number | null;
-  setPlaybackRate: (rate: number) => boolean;
-  seekTo: (time: number) => void;
-}
 
 /** カスタムフックの戻り値 */
 export interface UsePlayerSyncReturn {
   getCurrentTime: () => number | null;
   setDuration: (duration: number | null) => void;
   notifySyncData: (syncData: VJSyncData) => void;
-  isSyncing: boolean;
+  markSourceLoaded: () => void;
 }
 
 /**
  * プレイヤー同期用のカスタムフック
  * 時間同期と速度調整を統合して、プレイヤーの同期を管理する
- *
- * @param playerInterface プレイヤー操作のインターフェース
- * @returns 同期制御用の関数群
  */
-export const usePlayerSync = (playerInterface: PlayerSyncInterface): UsePlayerSyncReturn => {
+export const usePlayerSync = (
+  playerRef: RefObject<VJPlayerInterface | null>
+): UsePlayerSyncReturn => {
   const syncDataRef = useRef<VJSyncData>(INITIAL_SYNC_DATA);
   const isSyncingRef = useRef<boolean>(false);
+  const isSourceLoadingRef = useRef(true);
 
-  // 時間同期フック
   const { getExpectedCurrentTime, setDuration } = useTimeSync(syncDataRef);
 
-  // 再生速度調整フック
   const { calculateAdjustmentRate, applyPlaybackRateAdjustment, syncPlaybackRate } =
     usePlaybackRateAdjustment({
       syncDataRef,
-      setPlaybackRate: playerInterface.setPlaybackRate,
+      setPlaybackRate: (rate: number) => playerRef.current?.setPlaybackRate(rate) ?? false,
     });
 
-  /**
-   * メインの同期処理（再帰的に requestAnimationFrame で呼び出される）
-   */
   const _sync = useCallback(() => {
+    if (isSourceLoadingRef.current || syncDataRef.current.paused) {
+      return;
+    }
+
     const expectedCurrentTime = getExpectedCurrentTime();
     if (expectedCurrentTime === null) {
       return;
@@ -52,7 +45,7 @@ export const usePlayerSync = (playerInterface: PlayerSyncInterface): UsePlayerSy
 
     try {
       const syncData = syncDataRef.current;
-      const currentPlayerTime = playerInterface.getCurrentTime();
+      const currentPlayerTime = playerRef.current?.getCurrentTime() ?? null;
 
       if (currentPlayerTime === null) {
         return;
@@ -62,14 +55,11 @@ export const usePlayerSync = (playerInterface: PlayerSyncInterface): UsePlayerSy
       const absTimeDiff = Math.abs(timeDiff);
 
       if (absTimeDiff <= SYNC_CONFIG.syncThreshold) {
-        // 差分が閾値以下の場合、設定された速度をそのまま使用
         syncPlaybackRate();
         isSyncingRef.current = false;
       } else if (absTimeDiff >= SYNC_CONFIG.seekThreshold) {
-        // 差分が閾値以上の場合は強制シーク
-        playerInterface.seekTo(expectedCurrentTime);
+        playerRef.current?.seekTo(expectedCurrentTime);
       } else {
-        // その他の場合は動的速度調整
         const adjustmentRate = calculateAdjustmentRate(timeDiff, syncData.playbackRate);
         applyPlaybackRateAdjustment(adjustmentRate);
       }
@@ -78,14 +68,14 @@ export const usePlayerSync = (playerInterface: PlayerSyncInterface): UsePlayerSy
     }
   }, [
     getExpectedCurrentTime,
-    playerInterface,
+    playerRef,
     syncPlaybackRate,
     calculateAdjustmentRate,
     applyPlaybackRateAdjustment,
   ]);
 
   useEffect(() => {
-    const _isNeedLoopAdjust = () => {
+    const isNeedLoopAdjust = () => {
       const syncData = syncDataRef.current;
       if (syncData.loopStart == null || syncData.loopEnd == null) {
         return false;
@@ -97,7 +87,7 @@ export const usePlayerSync = (playerInterface: PlayerSyncInterface): UsePlayerSy
       return syncData.loopEnd < expectedCurrentTime;
     };
 
-    const _calculateLoopAdjustTime = () => {
+    const calculateLoopAdjustTime = () => {
       const syncData = syncDataRef.current;
       if (syncData.loopStart == null || syncData.loopEnd == null) {
         throw new Error("loopStart or loopEnd is not set");
@@ -109,9 +99,9 @@ export const usePlayerSync = (playerInterface: PlayerSyncInterface): UsePlayerSy
     const loop = () => {
       const syncData = syncDataRef.current;
 
-      if (!syncData.paused) {
-        if (_isNeedLoopAdjust()) {
-          syncData.baseTime += _calculateLoopAdjustTime();
+      if (!syncData.paused && !isSourceLoadingRef.current) {
+        if (isNeedLoopAdjust()) {
+          syncData.baseTime += calculateLoopAdjustTime();
           isSyncingRef.current = true;
         }
 
@@ -123,7 +113,6 @@ export const usePlayerSync = (playerInterface: PlayerSyncInterface): UsePlayerSy
     };
     animationFrameId = requestAnimationFrame(loop);
 
-    // 定期的に同期処理を開始する
     const interval = setInterval(() => {
       isSyncingRef.current = true;
     }, SYNC_CONFIG.interval);
@@ -134,21 +123,29 @@ export const usePlayerSync = (playerInterface: PlayerSyncInterface): UsePlayerSy
     };
   }, [_sync, getExpectedCurrentTime]);
 
-  /**
-   * 同期データの通知
-   * タイミング関連のデータが変更された場合に同期処理を開始する
-   */
+  const markSourceLoaded = useCallback(() => {
+    isSourceLoadingRef.current = false;
+    isSyncingRef.current = false;
+  }, []);
+
   const notifySyncData = useCallback((syncData: VJSyncData) => {
     const beforeSyncData = syncDataRef.current;
-
-    const needTimingSync =
-      syncData.baseTime !== beforeSyncData.baseTime ||
-      syncData.currentTime !== beforeSyncData.currentTime ||
-      syncData.playbackRate !== beforeSyncData.playbackRate;
+    const sourceChanged = hasSourceChanged(syncData.source, beforeSyncData.source);
 
     syncDataRef.current = syncData;
-    if (needTimingSync) {
-      isSyncingRef.current = true;
+
+    if (sourceChanged) {
+      isSourceLoadingRef.current = true;
+      isSyncingRef.current = false;
+    } else {
+      const needTimingSync =
+        syncData.baseTime !== beforeSyncData.baseTime ||
+        syncData.currentTime !== beforeSyncData.currentTime ||
+        syncData.playbackRate !== beforeSyncData.playbackRate;
+
+      if (needTimingSync) {
+        isSyncingRef.current = true;
+      }
     }
   }, []);
 
@@ -156,6 +153,6 @@ export const usePlayerSync = (playerInterface: PlayerSyncInterface): UsePlayerSy
     getCurrentTime: getExpectedCurrentTime,
     setDuration,
     notifySyncData,
-    isSyncing: isSyncingRef.current,
+    markSourceLoaded,
   };
 };

@@ -1,6 +1,10 @@
 import { fetchYouTubePlaylist, searchYouTubeVideos } from "@/api/youtubeDataAPI";
 import { useControllerAPIContext } from "@/pages/Controller/contexts/ControllerAPIContext";
 import type { VideoItem } from "@/pages/Controller/types/videoItem";
+import {
+  createYouTubeVideoItem,
+  revokeVideoItemsBlobUrls,
+} from "@/pages/Controller/utils/videoItem";
 import { clamp } from "@/utils";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { LibraryAPI } from "../../types";
@@ -16,7 +20,12 @@ interface UseLibraryAPIReturn {
   videos: VideoItem[];
   selectedVideoIndex: number;
 
-  addPlaylist: (name: string, videoIds: VideoItem[], changeFocus?: boolean) => void;
+  addPlaylist: (
+    name: string,
+    videoIds: VideoItem[],
+    changeFocus?: boolean,
+    mode?: "replace" | "append"
+  ) => void;
   changePlaylistFocus: (index: number, isRelative?: boolean) => void;
   changeVideoFocus: (index: number, isRelative?: boolean) => void;
 
@@ -30,7 +39,9 @@ export const useLibraryAPI = ({ setGlobalLibrary }: UseLibraryAPIParams): UseLib
   const { history } = historyAPI;
 
   const [playlists, setPlaylists] = useState<Map<string, VideoItem[]>>(() => {
-    const initialPlaylists = new Map([["History", history.map((videoId) => ({ id: videoId }))]]);
+    const initialPlaylists = new Map([
+      ["History", history.map((videoId) => createYouTubeVideoItem(videoId))],
+    ]);
     if (settings.youtubeDataAPIKey) {
       initialPlaylists.set("Search", []);
     }
@@ -42,7 +53,7 @@ export const useLibraryAPI = ({ setGlobalLibrary }: UseLibraryAPIParams): UseLib
       const newMap = new Map(prev);
       newMap.set(
         "History",
-        history.map((videoId) => ({ id: videoId }))
+        history.map((videoId) => createYouTubeVideoItem(videoId))
       );
       return newMap;
     });
@@ -98,22 +109,39 @@ export const useLibraryAPI = ({ setGlobalLibrary }: UseLibraryAPIParams): UseLib
     });
   }, [settings.youtubeDataAPIKey, selectedPlaylistIndex]);
 
-  const addPlaylist = useCallback((name: string, videos: VideoItem[], changeFocus = false) => {
-    if (name === "History" || name === "Search") {
-      console.error(`${name} is not allowed to be added. It is a system-managed playlist.`);
-      return;
-    }
+  const addPlaylist = useCallback(
+    (
+      name: string,
+      videos: VideoItem[],
+      changeFocus = false,
+      mode: "replace" | "append" = "replace"
+    ) => {
+      if (name === "History" || name === "Search") {
+        console.error(`${name} is not allowed to be added. It is a system-managed playlist.`);
+        return;
+      }
 
-    if (changeFocus) {
-      pendingFocusPlaylistName.current = name;
-    }
+      if (changeFocus) {
+        pendingFocusPlaylistName.current = name;
+      }
 
-    setPlaylists((prev) => {
-      const newMap = new Map(prev);
-      newMap.set(name, videos);
-      return newMap;
-    });
-  }, []);
+      setPlaylists((prev) => {
+        const newMap = new Map(prev);
+        const existing = newMap.get(name);
+        if (mode === "append") {
+          newMap.set(name, existing ? [...existing, ...videos] : videos);
+        } else {
+          // replace: revoke only the old items (important for blob: URLs)
+          if (existing) {
+            revokeVideoItemsBlobUrls(existing);
+          }
+          newMap.set(name, videos);
+        }
+        return newMap;
+      });
+    },
+    []
+  );
 
   const changePlaylistFocus = useCallback(
     (index: number, isRelative = false) => {
@@ -172,7 +200,11 @@ export const useLibraryAPI = ({ setGlobalLibrary }: UseLibraryAPIParams): UseLib
               return;
             }
             const { playlistName, videos } = result;
-            addPlaylist(playlistName || "YouTube Playlist", videos, true);
+            addPlaylist(
+              playlistName || "YouTube Playlist",
+              videos.map((video) => createYouTubeVideoItem(video.id, { title: video.title })),
+              true
+            );
           });
         },
         remove: (name: string) => {
@@ -182,6 +214,10 @@ export const useLibraryAPI = ({ setGlobalLibrary }: UseLibraryAPIParams): UseLib
           }
           setPlaylists((prev) => {
             const newMap = new Map(prev);
+            const existing = newMap.get(name);
+            if (existing) {
+              revokeVideoItemsBlobUrls(existing);
+            }
             newMap.delete(name);
             return newMap;
           });
@@ -272,7 +308,10 @@ export const useLibraryAPI = ({ setGlobalLibrary }: UseLibraryAPIParams): UseLib
       const videos = await searchYouTubeVideos(apiKey, query);
       setPlaylists((prev) => {
         const newMap = new Map(prev);
-        newMap.set("Search", videos);
+        newMap.set(
+          "Search",
+          videos.map((video) => createYouTubeVideoItem(video.id, { title: video.title }))
+        );
         return newMap;
       });
     },

@@ -1,6 +1,10 @@
 import { useFileIO } from "@/hooks/useFileIO";
 import { useControllerAPIContext } from "@/pages/Controller/contexts/ControllerAPIContext";
 import type { VideoItem } from "@/pages/Controller/types/videoItem";
+import {
+  createLocalFileVideoItem,
+  createYouTubeVideoItem,
+} from "@/pages/Controller/utils/videoItem";
 import { isYouTubeVideoId, isYouTubeVideoInfo, urlParser } from "@/pages/Controller/utils/youtube";
 import { useCallback, useState } from "react";
 import styles from "./Library.module.css";
@@ -41,17 +45,46 @@ const Library = () => {
         .filter(Boolean)
         .flatMap((line): VideoItem[] => {
           if (isYouTubeVideoId(line)) {
-            return [{ id: line }];
+            return [createYouTubeVideoItem(line)];
           }
           const info = urlParser.parse(line);
           if (isYouTubeVideoInfo(info)) {
-            return [{ id: info.id, start: info.params?.start }];
+            return [createYouTubeVideoItem(info.id, { start: info.params?.start })];
           }
           return [];
         });
       addPlaylist(filenameWithoutExt, videoItems, true);
     },
     [libraryAPI, addPlaylist]
+  );
+
+  const handleVideoFilesLoad = useCallback(
+    (files: File[]) => {
+      if (!libraryAPI || files.length === 0) {
+        return;
+      }
+      // ローカルファイルは blob URL が毎回変わるため、そのままでは重複判定できない。
+      // ここでは createLocalFileVideoItem() と同じ規則（拡張子なしのファイル名）で title を比較する。
+      const existingTitles = new Set(
+        (playlists.get("LocalFiles") ?? [])
+          .map((item) => item.title)
+          .filter((t): t is string => !!t)
+      );
+
+      const newItems: VideoItem[] = files
+        .map((file) => {
+          const title = file.name.replace(/\.[^/.]+$/, "") || file.name;
+          return { file, title };
+        })
+        .filter(({ title }) => !existingTitles.has(title))
+        .map(({ file }) => createLocalFileVideoItem(file));
+
+      if (newItems.length === 0) {
+        return;
+      }
+      addPlaylist("LocalFiles", newItems, true, "append");
+    },
+    [libraryAPI, addPlaylist, playlists]
   );
 
   const { importFile } = useFileIO<string>({
@@ -101,7 +134,12 @@ const Library = () => {
 
   return (
     <YouTubeDataProvider>
-      <FileDropZone accept=".txt" onFileLoad={handleFileLoad} className={styles.library}>
+      <FileDropZone
+        accept=".txt"
+        onFileLoad={handleFileLoad}
+        onVideoFilesLoad={handleVideoFilesLoad}
+        className={styles.library}
+      >
         <div className={styles.playlist}>
           <button type="button" onClick={handleLoadClick}>
             Load Playlist

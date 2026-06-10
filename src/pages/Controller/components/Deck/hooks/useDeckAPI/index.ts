@@ -1,10 +1,29 @@
 import type { VJPlayerRef, VJSyncData } from "@/components/VJPlayer/types";
+import { getEffectiveSyncTime } from "@/components/VJPlayer/utils";
+import type { LibraryAPI } from "@/pages/Controller/components/Library/types";
 import { useControllerAPIContext } from "@/pages/Controller/contexts/ControllerAPIContext";
 import type { VideoItem } from "@/pages/Controller/types/videoItem";
+import {
+  normalizeVideoItem,
+  revokeDeckBlobUrlUnlessInPlaylist,
+} from "@/pages/Controller/utils/videoItem";
 import { normalizeNumericValue } from "@/utils";
 import { useEffect, useRef } from "react";
 import type { RefObject } from "react";
 import type { DeckAPI } from "../../types";
+
+const revokePreviousDeckBlob = (
+  previous: VJSyncData | null | undefined,
+  libraryAPI: LibraryAPI | null
+) => {
+  if (previous?.source.type !== "url") {
+    return;
+  }
+  const playlistItems = libraryAPI
+    ? libraryAPI.playlists.getAllNames().flatMap((name) => libraryAPI.playlists.get(name))
+    : [];
+  revokeDeckBlobUrlUnlessInPlaylist(previous.source.url, playlistItems);
+};
 
 interface UseDeckAPIParams {
   vjPlayerRef: RefObject<VJPlayerRef | null>;
@@ -28,7 +47,9 @@ export const useDeckAPI = ({
   onOpacityChange,
 }: UseDeckAPIParams) => {
   const deckAPIRef = useRef<DeckAPI | null>(null);
-  const { setDeckAPI, historyAPI, settings } = useControllerAPIContext();
+  const { setDeckAPI, historyAPI, settings, libraryAPI } = useControllerAPIContext();
+  const libraryAPIRef = useRef(libraryAPI);
+  libraryAPIRef.current = libraryAPI;
   const hotCuesRef = useRef<Map<number, number>>(new Map());
 
   useEffect(() => {
@@ -58,10 +79,13 @@ export const useDeckAPI = ({
         });
       },
       adjustTiming: (relativeTime: number) => {
-        const currentTime = vjPlayerRef.current?.getCurrentTime() ?? 0;
+        const sync = syncDataRef.current;
+        if (!sync) {
+          return;
+        }
         updateSyncData({
           baseTime: Date.now(),
-          currentTime: currentTime + relativeTime,
+          currentTime: getEffectiveSyncTime(sync) + relativeTime,
         });
       },
       setHotCue: (cueId: number, time?: number) => {
@@ -132,9 +156,14 @@ export const useDeckAPI = ({
         onOpacityChange?.("opacity" in filters ? normalizeNumericValue(filters.opacity) : 1);
       },
       loadVideo: (video: VideoItem | string) => {
-        const videoObj = typeof video === "string" ? { id: video } : video;
+        revokePreviousDeckBlob(syncDataRef.current, libraryAPIRef.current);
+        const videoObj = normalizeVideoItem(video);
+        const source =
+          videoObj.source.type === "youtube"
+            ? { type: "youtube" as const, videoId: videoObj.source.videoId }
+            : { type: "url" as const, url: videoObj.source.url };
         const updateData: Partial<VJSyncData> = {
-          videoId: videoObj.id,
+          source,
           currentTime: videoObj.start ?? 0,
           baseTime: Date.now(),
           loopStart: null,
@@ -147,7 +176,9 @@ export const useDeckAPI = ({
         deckAPIRef.current?.unMute();
         hotCuesRef.current.clear();
         onHotCuesChange?.(hotCuesRef.current);
-        historyAPI.add(videoObj.id);
+        if (videoObj.source.type === "youtube") {
+          historyAPI.add(videoObj.source.videoId);
+        }
       },
       getCurrentTime: () => {
         return vjPlayerRef.current?.getCurrentTime() ?? 0;

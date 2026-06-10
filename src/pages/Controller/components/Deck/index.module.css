@@ -3,6 +3,11 @@
   max-width: 800px;
   margin: 0 auto;
   padding-bottom: 0 !important;
+  position: relative;
+}
+
+.playerWrapper {
+  position: relative;
 }
 
 .player {
@@ -11,6 +16,14 @@
   aspect-ratio: 16 / 9;
   position: relative;
   display: block;
+}
+
+/* YouTube 表示中のファイル D&D 中のみ iframe 手前で drop を受ける */
+.playerDropCapture {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  pointer-events: auto;
 }
 
 .player iframe {

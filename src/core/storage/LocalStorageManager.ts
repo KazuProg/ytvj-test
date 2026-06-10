@@ -3,23 +3,22 @@ type Listener = () => void;
 export default class LocalStorageManager<T> {
   private key: string;
   private defaultValue: T;
-  private overwrite: boolean;
   private value: T;
   private listeners = new Set<Listener>();
 
   constructor(key: string, defaultValue: T, overwrite = false) {
     this.key = key;
     this.defaultValue = defaultValue;
-    this.overwrite = overwrite;
+
+    if (overwrite) {
+      this.set(defaultValue);
+    }
     this.value = this.load();
 
     window.addEventListener("storage", this.handleStorageEvent);
   }
 
   private load(): T {
-    if (this.overwrite) {
-      return this.defaultValue;
-    }
     try {
       const item = localStorage.getItem(this.key);
       return item ? JSON.parse(item) : this.defaultValue;

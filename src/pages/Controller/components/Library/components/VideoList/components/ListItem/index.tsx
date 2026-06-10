@@ -1,5 +1,6 @@
 import { useYouTubeDataContext } from "@/pages/Controller/components/Library/contexts/YouTubeDataContext";
 import type { VideoItem } from "@/pages/Controller/types/videoItem";
+import { getVideoItemDisplayText, getYouTubeVideoId } from "@/pages/Controller/utils/videoItem";
 import { useEffect, useState } from "react";
 import styles from "./index.module.css";
 
@@ -13,19 +14,24 @@ interface ListItemProps {
 const ListItem = ({ videoItem, onSelect, className, index }: ListItemProps) => {
   const [title, setTitle] = useState<string | null>(videoItem.title ?? null);
   const { fetchTitle } = useYouTubeDataContext();
+  const youtubeVideoId = getYouTubeVideoId(videoItem);
+  const displayText = getVideoItemDisplayText(videoItem);
 
   useEffect(() => {
-    if (title === null || title === videoItem.id) {
-      fetchTitle(videoItem.id).then((title) => {
-        setTitle(title);
+    if (!youtubeVideoId) {
+      return;
+    }
+    if (title === null || title === youtubeVideoId) {
+      fetchTitle(youtubeVideoId).then((fetchedTitle) => {
+        setTitle(fetchedTitle);
       });
     }
-  }, [videoItem.id, title, fetchTitle]);
+  }, [youtubeVideoId, title, fetchTitle]);
 
   return (
     <tr
       data-index={index}
-      youtube-id={videoItem.id}
+      youtube-id={youtubeVideoId ?? undefined}
       className={className}
       tabIndex={0}
       onClick={() => onSelect(videoItem, index)}
@@ -37,9 +43,11 @@ const ListItem = ({ videoItem, onSelect, className, index }: ListItemProps) => {
       }}
     >
       <td className={styles.tdArt}>
-        <img src={`https://img.youtube.com/vi/${videoItem.id}/default.jpg`} alt={title || ""} />
+        {youtubeVideoId ? (
+          <img src={`https://img.youtube.com/vi/${youtubeVideoId}/default.jpg`} alt={title || ""} />
+        ) : null}
       </td>
-      <td className={styles.tdTitle}>{title || videoItem.id}</td>
+      <td className={styles.tdTitle}>{title || displayText}</td>
     </tr>
   );
 };

@@ -2,6 +2,12 @@ import Fader from "@/components/Fader";
 import { LOCAL_STORAGE_KEY } from "@/constants";
 import { useStorageSync } from "@/hooks/useStorageSync";
 import {
+  createUrlVideoItem,
+  createYouTubeVideoItem,
+  getPreparedVideoInputValue,
+  isDirectVideoUrl,
+} from "@/pages/Controller/utils/videoItem";
+import {
   isYouTubePlaylistInfo,
   isYouTubeVideoId,
   isYouTubeVideoInfo,
@@ -10,6 +16,7 @@ import {
 import type { MixerData } from "@/types";
 import { useEffect, useRef } from "react";
 import { useControllerAPIContext } from "../../contexts/ControllerAPIContext";
+import PreparedVideoThumbnail from "./components/PreparedVideoThumbnail";
 import { useMixerAPI } from "./hooks/useMixerAPI";
 import styles from "./index.module.css";
 
@@ -41,24 +48,31 @@ const Mixer = ({ className }: MixerProps) => {
   });
 
   const handleVideoIdChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const value = e.target.value;
+    const value = e.target.value.trim();
     if (isYouTubeVideoId(value)) {
-      mixerAPIRef.current?.setPreparedVideo({ id: value });
+      mixerAPIRef.current?.setPreparedVideo(createYouTubeVideoItem(value));
       return;
     }
     const info = urlParser.parse(value);
     if (isYouTubeVideoInfo(info) && inputRef.current) {
       inputRef.current.value = info.id;
-      mixerAPIRef.current?.setPreparedVideo({ id: info.id, start: info.params?.start });
+      mixerAPIRef.current?.setPreparedVideo(
+        createYouTubeVideoItem(info.id, { start: info.params?.start })
+      );
+      return;
     }
     if (isYouTubePlaylistInfo(info)) {
       libraryAPI?.playlists.addFromYouTubePlaylist(info.list);
+      return;
+    }
+    if (isDirectVideoUrl(value)) {
+      mixerAPIRef.current?.setPreparedVideo(createUrlVideoItem(value));
     }
   };
 
   useEffect(() => {
     if (inputRef.current) {
-      inputRef.current.value = preparedVideo?.id ?? "";
+      inputRef.current.value = getPreparedVideoInputValue(preparedVideo);
     }
   }, [preparedVideo]);
 
@@ -104,15 +118,11 @@ const Mixer = ({ className }: MixerProps) => {
       </div>
       <fieldset className={styles.loadTrack}>
         <legend>Load Track</legend>
-        <img
-          className={styles.ytThumbnail}
-          alt="YouTube Thumbnail"
-          src={`https://img.youtube.com/vi/${preparedVideo?.id}/default.jpg`}
-        />
+        <PreparedVideoThumbnail preparedVideo={preparedVideo} />
         <input
           type="text"
           id="input-videoId"
-          placeholder="Enter YouTube ID"
+          placeholder="Enter YouTube ID or video URL"
           onChange={handleVideoIdChange}
           onFocus={(e) => e.target.select()}
           ref={inputRef}

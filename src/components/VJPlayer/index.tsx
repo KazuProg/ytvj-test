@@ -1,27 +1,20 @@
 import { DEFAULT_VALUES, INITIAL_SYNC_DATA } from "@/constants";
 import { useStorageSync } from "@/hooks/useStorageSync";
-import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef } from "react";
-import YouTubePlayer from "./components/YouTubePlayer";
 import {
-  type YTPlayer,
-  type YTPlayerEvent,
-  type YTPlayerVars,
-  YT_PLAYER_STATE,
-} from "./components/YouTubePlayer/types";
-import { type PlayerSyncInterface, usePlayerSync } from "./hooks/usePlayerSync";
-import type { VJPlayerRef, VJSyncData } from "./types";
-
-const playerVars: YTPlayerVars = {
-  controls: 0,
-  disablekb: 1,
-};
-
-interface VJPlayerEvents {
-  onPaused?: () => void;
-  onUnpaused?: () => void;
-  onEnded?: () => void;
-  onFiltersChange?: (filters: Record<string, string>) => void;
-}
+  forwardRef,
+  useCallback,
+  useEffect,
+  useImperativeHandle,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+} from "react";
+import UrlVideoPlayer from "./components/UrlVideoPlayer";
+import YouTubePlayer from "./components/YouTubePlayer";
+import { usePlayerSync } from "./hooks/usePlayerSync";
+import styles from "./index.module.css";
+import type { VJPlayerEvents, VJPlayerInterface, VJPlayerRef, VJSyncData } from "./types";
+import { getEffectiveSyncTime } from "./utils";
 
 interface VJPlayerProps {
   className?: string;
@@ -31,180 +24,172 @@ interface VJPlayerProps {
 
 const VJPlayer = forwardRef<VJPlayerRef, VJPlayerProps>(
   ({ className, events, syncKey = DEFAULT_VALUES.syncKey }, ref) => {
-    const playerRef = useRef<YTPlayer | null>(null);
-    const beforeSyncDataRef = useRef<VJSyncData | null>(null);
-    const isSuppressingStateEventsRef = useRef(false);
-
-    // プレイヤーインターフェースの作成
-    const playerInterface = useCallback(
-      (): PlayerSyncInterface => ({
-        getCurrentTime: () => {
-          return playerRef.current?.getCurrentTime() ?? null;
-        },
-        getDuration: () => {
-          return playerRef.current?.getDuration() ?? null;
-        },
-        setPlaybackRate: (rate: number) => {
-          const player = playerRef.current;
-          if (player && player.getPlayerState() === YT_PLAYER_STATE.PLAYING) {
-            player.setPlaybackRate(rate);
-            return true;
-          }
-          return false;
-        },
-        seekTo: (time: number) => {
-          const player = playerRef.current;
-          if (player && player.getPlayerState() === YT_PLAYER_STATE.PLAYING) {
-            player.seekTo(time);
-          }
-        },
-      }),
-      []
-    );
-
-    // カスタムフックの使用
-    const { getCurrentTime, setDuration, notifySyncData } = usePlayerSync(playerInterface());
-
-    const handleSyncData = useCallback(
-      (syncData: VJSyncData) => {
-        const player = playerRef.current;
-        const beforeSyncData = beforeSyncDataRef.current;
-
-        if (!player) {
-          return;
-        }
-
-        const changedVideoId = syncData.videoId !== beforeSyncData?.videoId;
-
-        if (changedVideoId) {
-          isSuppressingStateEventsRef.current = true;
-          if (syncData.paused) {
-            player.cueVideoById(syncData.videoId);
-          } else {
-            player.loadVideoById(syncData.videoId);
-          }
-        } else {
-          if (syncData.paused) {
-            player.pauseVideo();
-          } else {
-            player.playVideo();
-          }
-        }
-
-        if (syncData.filters !== beforeSyncData?.filters) {
-          eventsRef.current?.onFiltersChange?.(syncData.filters);
-        }
-
-        notifySyncData(syncData);
-        beforeSyncDataRef.current = syncData;
-      },
-      [notifySyncData]
-    );
+    const youtubePlayerRef = useRef<VJPlayerInterface | null>(null);
+    const urlPlayerRef = useRef<VJPlayerInterface | null>(null);
+    const isUrlSourceRef = useRef(false);
+    const beforeFiltersRef = useRef<Record<string, string> | null>(null);
+    const syncDataRef = useRef<VJSyncData>(INITIAL_SYNC_DATA as VJSyncData);
+    const defaultSyncData = INITIAL_SYNC_DATA as VJSyncData;
 
     const { data: syncData, setData: setSyncData } = useStorageSync<VJSyncData>(
       syncKey,
-      INITIAL_SYNC_DATA as VJSyncData
+      defaultSyncData
     );
-    const syncDataRef = useRef(syncData);
+
     syncDataRef.current = syncData;
+    const isUrlSource = syncData.source.type === "url";
+    isUrlSourceRef.current = isUrlSource;
 
-    useEffect(() => {
-      if (syncData) {
-        handleSyncData(syncData);
-      }
-    }, [syncData, handleSyncData]);
-
-    const handleReady = useCallback(
-      (event: YTPlayerEvent) => {
-        const player = event.target;
-        try {
-          player.mute();
-          playerRef.current = player;
-
-          if (syncDataRef.current) {
-            handleSyncData(syncDataRef.current);
-          }
-        } catch (error) {
-          console.error("[VJPlayer] Failed to initialize player:", error);
-        }
-      },
-      [handleSyncData]
+    const playbackIntent = useMemo(
+      () => ({
+        startTime: getEffectiveSyncTime(syncData),
+        paused: syncData.paused,
+        playbackRate: syncData.playbackRate,
+      }),
+      [syncData]
     );
 
-    useEffect(() => {
-      return () => {
-        playerRef.current = null;
+    const handleUrlMediaReady = useCallback(
+      (timing: { currentTime: number; baseTime: number }) => {
+        setSyncData({
+          ...syncDataRef.current,
+          currentTime: timing.currentTime,
+          baseTime: timing.baseTime,
+        });
+      },
+      [setSyncData]
+    );
+
+    const activePlayerRef = useMemo(
+      () =>
+        ({
+          get current(): VJPlayerInterface | null {
+            const player = isUrlSourceRef.current ? urlPlayerRef.current : youtubePlayerRef.current;
+            if (!player) {
+              return null;
+            }
+            return {
+              ...player,
+              seekTo: (time: number) => {
+                if (player.isPlaying()) {
+                  player.seekTo(time);
+                } else if (!syncDataRef.current.paused) {
+                  player.seekTo(time);
+                  player.play();
+                }
+              },
+            };
+          },
+        }) as React.MutableRefObject<VJPlayerInterface | null>,
+      []
+    );
+
+    const getDeckPlayer = useCallback((): VJPlayerInterface | null => {
+      const active = activePlayerRef.current;
+      if (!active) {
+        return null;
+      }
+      return {
+        ...active,
+        mute: () => {
+          youtubePlayerRef.current?.mute();
+          urlPlayerRef.current?.mute();
+        },
+        unMute: () => {
+          youtubePlayerRef.current?.unMute();
+          urlPlayerRef.current?.unMute();
+        },
+        setVolume: (volume: number) => {
+          youtubePlayerRef.current?.setVolume(volume);
+          urlPlayerRef.current?.setVolume(volume);
+        },
       };
+    }, [activePlayerRef]);
+
+    const {
+      getCurrentTime: getExpectedCurrentTime,
+      setDuration,
+      notifySyncData,
+      markSourceLoaded,
+    } = usePlayerSync(activePlayerRef);
+
+    const handleYouTubeInterfaceReady = useCallback((iface: VJPlayerInterface) => {
+      youtubePlayerRef.current = iface;
     }, []);
 
-    const eventsRef = useRef(events);
+    const handleYouTubeInterfaceClear = useCallback(() => {
+      youtubePlayerRef.current = null;
+    }, []);
 
-    // eventsをrefで保持（再初期化を防ぐ）
+    const handleUrlInterfaceReady = useCallback((iface: VJPlayerInterface) => {
+      urlPlayerRef.current = iface;
+    }, []);
+
+    const handleUrlInterfaceClear = useCallback(() => {
+      urlPlayerRef.current = null;
+    }, []);
+
+    useLayoutEffect(() => {
+      if (isUrlSource) {
+        youtubePlayerRef.current?.pause();
+      } else {
+        urlPlayerRef.current?.pause();
+      }
+    }, [isUrlSource]);
+
+    useLayoutEffect(() => {
+      notifySyncData(syncData);
+    }, [syncData, notifySyncData]);
+
     useEffect(() => {
-      eventsRef.current = events;
-    }, [events]);
-
-    const handlePlayerStateEvents = useCallback((playerState: number) => {
-      if (playerState === YT_PLAYER_STATE.PAUSED && !syncDataRef.current?.paused) {
-        eventsRef.current?.onPaused?.();
+      if (syncData.filters !== beforeFiltersRef.current) {
+        beforeFiltersRef.current = syncData.filters;
+        events?.onFiltersChange?.(syncData.filters);
       }
-
-      if (playerState !== YT_PLAYER_STATE.PAUSED && syncDataRef.current?.paused) {
-        eventsRef.current?.onUnpaused?.();
-      }
-
-      if (playerState === YT_PLAYER_STATE.ENDED) {
-        eventsRef.current?.onEnded?.();
-      }
-    }, []);
-
-    const handleStateChange = useCallback(
-      (e: YTPlayerEvent) => {
-        const playerState = e.data;
-
-        if (isSuppressingStateEventsRef.current) {
-          if (playerState === YT_PLAYER_STATE.BUFFERING) {
-            // 初めのBufferingで準備完了とみなす
-            // (以後onPausedやonUnpausedを発火させる)
-            isSuppressingStateEventsRef.current = false;
-          }
-          return;
-        }
-
-        if (playerState === YT_PLAYER_STATE.PLAYING) {
-          setDuration(playerRef.current?.getDuration() ?? null);
-        }
-
-        handlePlayerStateEvents(playerState);
-      },
-      [setDuration, handlePlayerStateEvents]
-    );
+    }, [syncData.filters, events]);
 
     useImperativeHandle(
       ref,
       () => ({
-        getPlayer: () => playerRef.current,
-        getCurrentTime,
+        getPlayer: getDeckPlayer,
+        getCurrentTime: getExpectedCurrentTime,
         setSyncData,
       }),
-      [getCurrentTime, setSyncData]
+      [getDeckPlayer, getExpectedCurrentTime, setSyncData]
     );
 
-    const ytPlayerEvents = useMemo(
-      () => ({
-        onReady: handleReady,
-        onStateChange: handleStateChange,
-      }),
-      [handleReady, handleStateChange]
-    );
+    const youtubeVideoId =
+      !isUrlSource && syncData.source.type === "youtube" ? syncData.source.videoId : null;
+    const urlSource = isUrlSource && syncData.source.type === "url" ? syncData.source.url : null;
 
     return (
-      <YouTubePlayer
-        className={className}
-        videoId={DEFAULT_VALUES.videoId}
-        events={ytPlayerEvents}
-        playerVars={playerVars}
-      />
+      <div className={className}>
+        <div className={styles.playerLayer} style={{ display: isUrlSource ? "none" : "block" }}>
+          <YouTubePlayer
+            active={!isUrlSource}
+            videoId={youtubeVideoId}
+            playbackIntent={playbackIntent}
+            onInterfaceReady={handleYouTubeInterfaceReady}
+            onInterfaceClear={handleYouTubeInterfaceClear}
+            onSourceLoaded={markSourceLoaded}
+            onDurationChange={setDuration}
+            events={events}
+          />
+        </div>
+        <div className={styles.playerLayer} style={{ display: isUrlSource ? "block" : "none" }}>
+          <UrlVideoPlayer
+            active={isUrlSource}
+            sourceUrl={urlSource}
+            playbackIntent={playbackIntent}
+            onInterfaceReady={handleUrlInterfaceReady}
+            onInterfaceClear={handleUrlInterfaceClear}
+            onSourceLoaded={markSourceLoaded}
+            onDurationChange={setDuration}
+            onMediaReady={events?.onMediaReady ? handleUrlMediaReady : undefined}
+            events={events}
+          />
+        </div>
+      </div>
     );
   }
 );
