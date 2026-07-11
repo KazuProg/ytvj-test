@@ -1,6 +1,15 @@
 # Changelog
 
 - - -
+## [v1.6.0](https://github.com/KazuProg/ytvj-test/compare/e75a95725d361bc2fb48f22a0ea881f4e4062a55..v1.6.0) - 2026-07-11
+#### Features
+- add temporary marker file to verify cocogitto release automation - ([7e777a7](https://github.com/KazuProg/ytvj-test/commit/7e777a7d3474ef4b44b6b242079042433b5c1cce)) - KazuProg
+#### Continuous Integration
+- replace release-please with cocogitto-based release automation - ([b68f91a](https://github.com/KazuProg/ytvj-test/commit/b68f91ad6c9fef9cc0888fc8d3d46b277c294ca6)) - KazuProg
+- pin dependabot target branch to main - ([e75a957](https://github.com/KazuProg/ytvj-test/commit/e75a95725d361bc2fb48f22a0ea881f4e4062a55)) - KazuProg
+
+- - -
+
 ## [1.5.0](https://github.com/KazuProg/youtube-vj/compare/v1.4.0...v1.5.0) (2026-07-04)
 
 
